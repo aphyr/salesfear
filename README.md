@@ -1,4 +1,4 @@
-# salesfear
+# SalesFear
 
 SalesFear aims to quell the insensate rage and terror which go hand in hand
 with the Salesforce API.
