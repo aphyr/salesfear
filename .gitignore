@@ -1,0 +1,9 @@
+pom.xml
+*jar
+/lib/
+/classes/
+target/
+.*.swp
+.lein-deps-sum
+cache.clj
+*.log
