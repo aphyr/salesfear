@@ -1,4 +1,4 @@
-(defproject salesfear "0.1.0-SNAPSHOT"
+(defproject salesfear "0.1.0"
   :description "Talk to the Salesforce API, via teamlazerbeez sf-api-connector."
   :url "http://github.com/aphyr/salesfear"
   :repositories {"boundary-site" "http://maven.boundary.com/artifactory/repo"}
