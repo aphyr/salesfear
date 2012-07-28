@@ -3,12 +3,16 @@
 SalesFear aims to quell the insensate rage and terror which go hand in hand
 with the Salesforce API.
 
-It's a wrapper around http://blog.palominolabs.com/2011/03/03/a-new-java-salesforce-api-library/. [Their source](https://github.com/teamlazerbeez/sf-api-connector/tree/master/sf-rest-api-connector/src/main/java/com/teamlazerbeez/crm/sf/rest) will probably come in handy.
+It's a wrapper around http://blog.palominolabs.com/2011/03/03/a-new-java-salesforce-api-library/. 
 
 Check http://clojars.org/salesfear for the latest version, then add to your
 project.clj's dependencies.
 
+[Their source](https://github.com/teamlazerbeez/sf-api-connector/tree/master/sf-rest-api-connector/src/main/java/com/teamlazerbeez/crm/sf/rest) will probably come in handy.
+
 ## Usage
+
+Fire up a REPL and follow along!
 
 ``` clojure
 (use 'salesfear.client)
@@ -64,6 +68,14 @@ nil
 ; Salesfear transparently caches this for each (salesforce ...) context.
 (sobject-field-names :Account)
 ("Id" "IsDeleted" "MasterRecordId" "Name" "Type" "ParentId" "BillingStreet" "BillingCity" "BillingState" "BillingPostalCode" "BillingCountry" "ShippingStreet" "ShippingCity" "ShippingState" "ShippingPostalCode" "ShippingCountry" "Phone" "Fax" "AccountNumber" "Website" "Sic" "Industry" "AnnualRevenue" "NumberOfEmployees" "Ownership" "TickerSymbol" "Description" "Rating" "Site" "OwnerId" "CreatedDate" "CreatedById" "LastModifiedDate" "LastModifiedById" "SystemModstamp" "LastActivityDate" "CustomerPriority__c" "SLA__c" "Active__c" "NumberofLocations__c" "UpsellOpportunity__c" "SLASerialNumber__c" "SLAExpirationDate__c")
+
+; Use find for basic equality constraints.
+(find :Account {:Name "o'brien"})
+(#salesfear.client.CSObject{:type "Account", :id "001E000000JM7c7", ...) ...)
+
+; ffind finds a single object.
+(ffind :Account {:Name "o'brien" :Site "1"})
+#salesfear.client.CSObject{:type "Account", :id "001E000000JM7c2", ...
 
 ; Introspection. 
 (describe-global)
