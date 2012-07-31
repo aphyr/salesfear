@@ -67,7 +67,7 @@
 
 (defmacro salesforce 
   "Executes exprs with implicit credentials, organization, etc. Opts:
-  :user      SF username
+  :username  SF username
   :password  SF password
   :orgid     Organization ID
   :threads   Maximum number of concurrent operations"
