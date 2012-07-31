@@ -8,5 +8,7 @@
                            [slingshot "0.10.3"]
                            [org.clojure/tools.logging "0.2.3"]
                            [clj-time "0.4.3"]
+                           ; Necessary to prevent jackson issues for some reason
+                           [org.codehaus.jackson/jackson-core-asl "1.7.0"]
                            [com.teamlazerbeez/sf-rest-api-connector "trunk-SNAPSHOT"]
                            [com.teamlazerbeez/sf-soap-api-connector "trunk-SNAPSHOT"]])
