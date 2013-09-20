@@ -23,7 +23,10 @@ Fire up a REPL and follow along!
 (use 'salesfear.client)
 
 ; Connect to Salesforce with your credentials:
-(salesforce! {:org-id "00DE0000000b894" :username "foo@bar.com" :password (str "mypw" "mytoken")})
+(salesforce!
+ {:org-id "00DE0000000b894"
+  :username "foo@bar.com"
+  :password (str "mypw" "mytoken")})
 
 ; List all accounts.
 (find :Account)
@@ -82,7 +85,7 @@ nil
 (ffind :Account {:Name "o'brien" :Site "1"})
 #salesfear.client.CSObject{:type "Account", :id "001E000000JM7c2", ...
 
-; Introspection. 
+; Introspection.
 (describe-global)
 (describe-sobject :Account)
 ; I wouldn't rely on these methods; there's too much I haven't looked at and
