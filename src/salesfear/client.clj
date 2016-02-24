@@ -1,4 +1,4 @@
-(ns barunson.salesforce
+(ns salesfear.client
   (:refer-clojure :exclude (get find update))
   (:use [clojure.string :only [join split escape]]
         [slingshot.slingshot :only [throw+ try+]])
