@@ -1,12 +1,13 @@
 (ns salesfear.client
-  (:refer-clojure :exclude (get find))
+  (:refer-clojure :exclude (get find update))
   (:use [clojure.string :only [join split escape]]
         [slingshot.slingshot :only [throw+ try+]])
   (:import (java.net URL)
-           (com.teamlazerbeez.crm.sf.core SObject
+           (com.palominolabs.crm.sf.core SObject
                                           Id)
-           (com.teamlazerbeez.crm.sf.soap ConnectionPoolImpl)
-           (com.teamlazerbeez.crm.sf.rest RestConnectionPoolImpl)))
+           (com.palominolabs.crm.sf.soap ConnectionPoolImpl
+                                         PartnerSObjectImpl)
+           (com.palominolabs.crm.sf.rest RestConnectionPoolImpl)))
 
 ; Records
 (defrecord CSObject [type id]
@@ -24,7 +25,7 @@
   (setAllFields [this m] (throw RuntimeException))
   (removeField [this k] (throw RuntimeException)))
 
-(defn sobject 
+(defn sobject
   "Creates an immutable CSObject. Can take an SObject, or a type, id, and map
   of fields to values. Ids will be converted to Id objects, types will be
   converted to strings. (sobject nil) is nil."
@@ -41,7 +42,7 @@
          [(keyword k) v])))))
 
 ; Misc stuff
-(def client-id "joanna")
+(def client-id (com.codahale.metrics.MetricRegistry.))
 (def cache-default {:sobject-field-names {}})
 (def ^:dynamic cache (atom cache-default))
 
@@ -49,54 +50,72 @@
 (def ^:dynamic *rest-pool*)
 (def ^:dynamic *soap-pool*)
 (def ^:dynamic *org-id*)
+(def ^:dynamic *sandbox*)
 
 (defn soap-pool
   "Returns a SOAP connection pool."
-  [org-id username password threads]
-  (doto (ConnectionPoolImpl. client-id)
-    (.configureOrg org-id username password threads)))
+  [org-id username password threads is-sandbox]
+  (if-not is-sandbox
+    (doto (ConnectionPoolImpl. "" client-id)
+      (.configureOrg org-id username password threads))
+    (doto (ConnectionPoolImpl. "" client-id)
+      (.configureSandboxOrg org-id username password threads))))
 
 (defn rest-pool
   "Returns a REST connection pool from a soap pool"
-  [soap-pool org-id]
-  (let [bc (.getBindingConfig (.getConnectionBundle soap-pool org-id))
-        host (.getHost (URL. (.getPartnerServerUrl bc)))
-        token (.getSessionId bc)]
-    (doto (RestConnectionPoolImpl.)
-      (.configureOrg org-id host token))))
+  [soap-pool org-id is-sandbox]
+  (if-not is-sandbox
+    (let [bc (.getBindingConfig (.getConnectionBundle soap-pool org-id))
+          host (.getHost (URL. (.getPartnerServerUrl bc)))
+          token (.getSessionId bc)]
+      (doto (RestConnectionPoolImpl. client-id)
+        (.configureOrg org-id host token)))
+    (let [bc (.getBindingConfig (.getSandboxConnectionBundle soap-pool org-id))
+          host (.getHost (URL. (.getPartnerServerUrl bc)))
+          token (.getSessionId bc)]
+      (doto (RestConnectionPoolImpl. client-id)
+        (.configureOrg org-id host token)))))
 
-(defmacro salesforce 
+(defmacro salesforce
   "Executes exprs with implicit credentials, organization, etc. Opts:
   :username  SF username
   :password  SF password
   :orgid     Organization ID
   :threads   Maximum number of concurrent operations"
   [opts & exprs]
-  `(let [soap-pool# (soap-pool ~(:org-id opts) 
-                               ~(:username opts) 
-                               ~(:password opts) 
-                               ~(or (:threads opts) 8))
-         rest-pool# (rest-pool soap-pool# ~(:org-id opts))]
+  `(let [soap-pool# (soap-pool ~(:org-id opts)
+                               ~(:username opts)
+                               ~(:password opts)
+                               ~(or (:threads opts) 8)
+                               ~(or (:is-sandbox opts) false))
+         rest-pool# (rest-pool soap-pool# ~(:org-id opts) ~(or (:is-sandbox opts) false))]
      (binding [cache       (atom cache-default)
                *soap-pool* soap-pool#
                *rest-pool* rest-pool#
-               *org-id*    ~(:org-id opts)]
+               *org-id*    ~(:org-id opts)
+               *sandbox* ~(:is-sandbox opts)]
        ~@exprs)))
 
 (defn salesforce!
   "Like (salesforce), but redefines local vars destructively. Useful for REPL
   testing."
   [opts]
-  (let [soap-pool (soap-pool (:org-id opts) 
-                             (:username opts) 
-                             (:password opts) 
-                             (or (:threads opts) 8))
-        rest-pool (rest-pool soap-pool (:org-id opts))]
+  (let [soap-pool (soap-pool (:org-id opts)
+                             (:username opts)
+                             (:password opts)
+                             (or (:threads opts) 8)
+                             (or (:is-sandbox opts) false))
+        rest-pool (rest-pool soap-pool (:org-id opts) (or (:is-sandbox opts) false))]
     (def ^:dynamic cache (atom cache-default))
     (def ^:dynamic *soap-pool* soap-pool)
     (def ^:dynamic *rest-pool* rest-pool)
-    (def ^:dynamic *org-id* (:org-id opts))))
+    (def ^:dynamic *org-id* (:org-id opts))
+    (def ^:dynamic *sandbox* (:is-sandbox opts))))
 
+(defn soap-conn []
+  (if *sandbox*
+    (.getPartnerConnection (.getSandboxConnectionBundle *soap-pool* *org-id*))
+    (.getPartnerConnection (.getConnectionBundle *soap-pool* *org-id*))))
 
 (defn rest-conn []
   (.getRestConnection *rest-pool* *org-id*))
@@ -134,20 +153,30 @@
   [string]
   (str "'" (escape string {\' "\\'"}) "'"))
 
-(defn soql-literal 
+(defn soql-literal
   "Returns SOQL string fragments for values. Strings are quoted, keywords are
   not quoted, numbers are converted with (str), true, false, and nil are
   \"true\", \"false\", and \"null\".
-  
+
   I haven't actually verified soql's syntax, so this could bite you. :-D"
-  [x]
-  (cond (nil? x) "null"
-        (true? x) "true"
-        (false? x) "false"
-        (keyword? x) (name x)
-        (string? x) (soql-quote x)
-        (number? x) (str x)
-        true (str x)))
+  ([x]
+   (cond (nil? x) "null"
+         (true? x) "true"
+         (false? x) "false"
+         (keyword? x) (name x)
+         (string? x) (soql-quote x)
+         (number? x) (str x)
+         (instance? java.util.Date x) (.format (java.text.SimpleDateFormat. "yyyy-MM-dd") x)
+         true (str x)))
+  ([x _]
+   (cond (nil? x) "null"
+         (true? x) "true"
+         (false? x) "false"
+         (keyword? x) (name x)
+         ;; (string? x) (soql-quote x)
+         (number? x) (str x)
+         (instance? java.util.Date x) (.format (java.text.SimpleDateFormat. "yyyy-MM-dd") x)
+         true (str x))))
 
 (defn soql-where
   "Given a map of fields to values, returns a string like field1 = \"value1\" AND field2 = 2.4"
@@ -195,12 +224,29 @@
   "Creates an sobject. Returns id if created, throws errors. Might return false
   if not successful, whenever that happens."
   ([type fields] (create type nil fields))
-  ([type id fields] (create (sobject type id fields)))
+  ([type id fields] (create (sobject type id
+                                     (persistent!
+                                      (reduce (fn [m [k v]] (assoc! m k (soql-literal v nil)))
+                                              (transient (empty {})) fields)))))
   ([sobject]
   (let [res (.create (rest-conn) sobject)]
         (if (.isSuccess res)
           (str (.getId res))
           false))))
+
+(defn creates
+  ([type fields-seq] (creates type nil fields-seq))
+  ([type id fields-seq]
+   (creates (mapv (fn [fs]
+                    (doto (PartnerSObjectImpl/getNew (name type))
+                      (#(map (fn [k v] (.setField % (name k) v)) fs))))
+                 fields-seq)))
+  ([sobjects]
+   (let [res (.create (soap-conn) (java.util.ArrayList. sobjects))]
+     (for [r res]
+       (if (.isSuccess r)
+         (str (.getId r))
+         false)))))
 
 (defn delete
   "Delete an sobject of type with the given id, or, deletes an sobject. Returns
@@ -214,11 +260,10 @@
      (try+
        (.delete (rest-conn) (name type) id)
        :deleted
-       (catch (and (instance? com.teamlazerbeez.crm.sf.rest.ApiException 
+       (catch (and (instance? com.palominolabs.crm.sf.rest.ApiException
                               (.getCause %))
-                   (= 404 (.getHttpResponseCode (.getCause %)))) e 
-         :already-deleted)))
-   ))
+                   (= 404 (.getHttpResponseCode (.getCause %)))) e
+         :already-deleted)))))
 
 (defn find
   "Finds SObjects of type given constraints, an (inline) map of fields to
@@ -252,7 +297,7 @@
    (let [id (if (string? id) (Id. id) id)]
      (try+
        (sobject (.retrieve (rest-conn) (name type) id fields))
-       (catch (and (instance? com.teamlazerbeez.crm.sf.rest.ApiException 
+       (catch (and (instance? com.palominolabs.crm.sf.rest.ApiException
                               (.getCause %))
                    (= 404 (.getHttpResponseCode (.getCause %)))) e)))))
 
@@ -261,7 +306,7 @@
 (defn update
   "Updates an sobject. Returns sobject."
   ([type id fields]
-   (update (sobject type id fields)))
+   (update (sobject type id (persistent! (reduce (fn [m [k v]] (assoc! m k (soql-literal v nil))) (transient (empty {})) fields)))))
   ([sobject]
    (.update (rest-conn) sobject)
    sobject))
@@ -270,4 +315,19 @@
   "Upserts an sobject, given an sobject and the field name of the external id
   field."
   [sobject external-id-field]
-  (.upsert SObject external-id-field))
+  (.upsert (rest-conn) sobject external-id-field))
+
+(defmacro with-prod
+  [exprs]
+  `(salesforce {:org-id ""
+                :username ""
+                :password ""}
+               ~exprs))
+
+(defmacro with-sandbox
+  [exprs]
+  `(salesforce {:org-id ""
+                :username ""
+                :password ""
+                :is-sandbox true}
+               ~exprs))
