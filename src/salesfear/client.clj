@@ -239,10 +239,13 @@
   ([type id fields-seq]
    (creates (mapv (fn [fs]
                     (doto (PartnerSObjectImpl/getNew (name type))
-                      (#(map (fn [k v] (.setField % (name k) v)) fs))))
+                      (.setAllFields (persistent!
+                                      (reduce (fn [m [k v]] (assoc! m (name k) (soql-literal v nil)))
+                                              (transient (empty {})) fs)))))
                  fields-seq)))
   ([sobjects]
-   (let [res (.create (soap-conn) (java.util.ArrayList. sobjects))]
+   (let [res (mapcat #(.create (soap-conn) %)
+                  (partition-all 200 (java.util.ArrayList. sobjects)))]
      (for [r res]
        (if (.isSuccess r)
          (str (.getId r))
