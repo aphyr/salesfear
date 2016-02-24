@@ -306,7 +306,7 @@
 (defn update
   "Updates an sobject. Returns sobject."
   ([type id fields]
-   (update (sobject type id (reduce (fn [m [k v]] (assoc m k (soql-literal v nil))) {} fields))))
+   (update (sobject type id (persistent! (reduce (fn [m [k v]] (assoc! m k (soql-literal v nil))) (transient (empty {})) fields)))))
   ([sobject]
    (.update (rest-conn) sobject)
    sobject))
