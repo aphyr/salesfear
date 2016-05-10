@@ -106,11 +106,9 @@
                              (or (:threads opts) 8)
                              (or (:is-sandbox opts) false))
         rest-pool (rest-pool soap-pool (:org-id opts) (or (:is-sandbox opts) false))]
-    (def ^:dynamic cache (atom cache-default))
-    (def ^:dynamic *soap-pool* soap-pool)
-    (def ^:dynamic *rest-pool* rest-pool)
-    (def ^:dynamic *org-id* (:org-id opts))
-    (def ^:dynamic *sandbox* (:is-sandbox opts))))
+    (mapcat #(alter-var-root %1 (constantly %2))
+            [#'cache #'*soap-pool* #'*rest-pool* #'*org-id* #'*sandbox*]
+            [(atom cache-default) soap-pool rest-pool (:org-id opts) (:is-sandbox opts)])))
 
 (defn soap-conn []
   (if *sandbox*
@@ -164,19 +162,12 @@
          (true? x) "true"
          (false? x) "false"
          (keyword? x) (name x)
-         (string? x) (soql-quote x)
          (number? x) (str x)
          (instance? java.util.Date x) (.format (java.text.SimpleDateFormat. "yyyy-MM-dd") x)
+         (string? x) (soql-quote x)
          true (str x)))
   ([x _]
-   (cond (nil? x) "null"
-         (true? x) "true"
-         (false? x) "false"
-         (keyword? x) (name x)
-         ;; (string? x) (soql-quote x)
-         (number? x) (str x)
-         (instance? java.util.Date x) (.format (java.text.SimpleDateFormat. "yyyy-MM-dd") x)
-         true (str x))))
+   (if (string? x) x (soql-literal x))))
 
 (defn soql-where
   "Given a map of fields to values, returns a string like field1 = \"value1\" AND field2 = 2.4"
@@ -319,18 +310,3 @@
   field."
   [sobject external-id-field]
   (.upsert (rest-conn) sobject external-id-field))
-
-(defmacro with-prod
-  [exprs]
-  `(salesforce {:org-id ""
-                :username ""
-                :password ""}
-               ~exprs))
-
-(defmacro with-sandbox
-  [exprs]
-  `(salesforce {:org-id ""
-                :username ""
-                :password ""
-                :is-sandbox true}
-               ~exprs))
